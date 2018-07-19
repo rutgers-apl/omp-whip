@@ -1,0 +1,1 @@
+/usr/bin/c++  -fPIC -O3 -DNDEBUG  -shared -Wl,-soname,libomptarget.so -o libomptarget.so CMakeFiles/omptarget.dir/src/omptarget.cpp.o -ldl -Wl,--version-script=/home/nader/llvm-master-src/llvm/projects/openmp/libomptarget/exports 
