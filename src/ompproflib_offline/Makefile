@@ -21,17 +21,14 @@ CC = clang -gdwarf-3 -std=c11
 CXX = clang++ -gdwarf-3 -std=c++11
 
 OMPFLAGS = -fopenmp
-BASE_FLAGS= -DOMPT_DEBUG -g $(INCLUDES)
+#BASE_FLAGS= -DOMPT_DEBUG -g $(INCLUDES)
+BASE_FLAGS= -g $(INCLUDES)
 FLAGS = $(OMPFLAGS) $(BASE_FLAGS)
 
 all: libompprof
 
-libompprof: ompt-initialize.o ompt-regression.o ompt-tool.o causalProfiler.o openmp_profiler.o perf_profiler.o treeNode.o
-	ar r libompprof.a ompt-initialize.o ompt-regression.o ompt-tool.o causalProfiler.o openmp_profiler.o perf_profiler.o treeNode.o
-
-%ompt-regression.o : %ompt-regression.c 
-	$(CC)  -c $(BASE_FLAGS) -o $@ $<
-
+libompprof: ompt-tool.o causalProfiler.o openmp_profiler.o perf_profiler.o treeNode.o
+	ar r libompprof.a ompt-tool.o causalProfiler.o openmp_profiler.o perf_profiler.o treeNode.o
 
 %.o : %.c 
 	$(CC)  -c $(FLAGS) -o $@ $<
@@ -41,7 +38,7 @@ libompprof: ompt-initialize.o ompt-regression.o ompt-tool.o causalProfiler.o ope
 
 
 clean:
-	rm -rf *.o *.a *~
+	rm -rf *.o *~
 
 cleanall:
 	rm -rf *.o *.a *~

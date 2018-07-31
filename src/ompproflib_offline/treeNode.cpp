@@ -24,14 +24,22 @@ TreeNode::TreeNode(NodeType node_type){
 
 //called from perf_profiler for a step node's parent info
 std::ostream& operator<<(std::ostream& os, const TreeNode& node){
-
+    /*
+    os << node.incrId << ", " << std::get<0>(node.id) << ", " << std::get<1>(node.id) << ", " << std::get<2>(node.id) <<
+    ", " << node.type <<  ", " << node.pIncrId << ", " << std::get<0>(node.parent_id) << ", " << std::get<1>(node.parent_id) << ", " << 
+    std::get<2>(node.parent_id);
+    */
     //only need the parents Id for step nodes
     os << node.incrId;
     return os;
 }
 
 void TreeNode::serialize(std::ofstream& strm){
-
+    /*
+    strm << incrId << ", " << std::get<0>(id) << ", " << std::get<1>(id) << ", " << std::get<2>(id) <<
+    ", " << type << ", " << pIncrId << ", " << std::get<0>(parent_id) << ", " << std::get<1>(parent_id) << ", " << 
+    std::get<2>(parent_id) << ", "  << pType << ", " << callSiteId << std::endl;
+    */
     //add parallel Id to profling log
     //id, type, parallel_id, parentId, callSiteId
     strm << incrId << "," << type << "," << std::get<1>(id) << "," << pIncrId << "," << callSiteId << std::endl;

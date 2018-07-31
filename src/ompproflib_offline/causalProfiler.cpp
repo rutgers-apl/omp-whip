@@ -7,7 +7,7 @@ OpenmpProfiler omp_profiler;
 PerfProfiler perf_profiler;
 std::atomic<unsigned long> node_ctr(0);
 std::atomic<unsigned long> callSite_ctr(1);
-
+//omp_get_thread_nums need to change?
   __attribute__((noinline)) void __causal_begin__(const char* file, int line){
     perf_profiler.CaptureCausalBegin(omp_get_thread_num(), file, line, __builtin_return_address(0));
   }

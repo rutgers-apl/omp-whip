@@ -10,7 +10,7 @@
 #include <vector>
 #include <omp.h>
 #include <pthread.h>
-#include "ompt.h"
+#include <ompt.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -22,8 +22,15 @@
 
 #define NUM_THREADS 16
 
-typedef unsigned int THREADID;
+typedef uint64_t THREADID;
 
+//temporarily add this to stop compile errors
+typedef uint64_t ompt_thread_id_t;
+typedef uint64_t ompt_task_id_t;
+typedef uint64_t ompt_parallel_id_t;
+typedef uint64_t ompt_wait_id_t;
+
+//move this to util.h?
 template <typename T1>
 std::ostream& operator << (std::ostream& strm,
 const std::vector<T1>& v)

@@ -2,7 +2,6 @@
 #define OPENMP_PROFILER_H_
 
 #include "globals.h"
-#include <ompt-regression.h>
 #include "treeNode.h"
 #include <sstream>
 #include <algorithm>
@@ -22,14 +21,17 @@ extern std::atomic<unsigned long> callSite_ctr;
 class OpenmpProfiler{
 private:
 	int ompp_initialized;
-	std::ofstream report[NUM_THREADS+1];
-	std::ofstream tree_nodes[NUM_THREADS+1];
-	std::ofstream revised_tree_nodes[NUM_THREADS+1];
-	/// Log task dependencies
-	std::ofstream task_dependencies[NUM_THREADS+1];
+	int num_procs;
+	//per thread logs
+	std::ofstream report[NUM_THREADS];
+	std::ofstream tree_nodes[NUM_THREADS];
+	std::ofstream revised_tree_nodes[NUM_THREADS];
+	//log task dependencies
+	std::ofstream task_dependencies[NUM_THREADS];
 	std::ofstream callsite_info;
-
-	std::vector<TreeNode> last_nodes[NUM_THREADS+1];
+	//per thread stack to store ospg nodes
+	std::vector<TreeNode> last_nodes[NUM_THREADS];
+	//map used between task create and task begin
 	std::map<ompt_task_id_t, TreeNode*> taskMap;
 	std::map<ompt_task_id_t, std::string> shadowTaskMap;
 	std::map<node_id_t, unsigned long> pendingTaskNode;
@@ -46,32 +48,35 @@ private:
 	int barEndFlag;
 	int barFirstThread;
 	int implEndCount;
-	unsigned long barrierCount[NUM_THREADS+1];
+	//new sync solution
+	unsigned long barrierCount[NUM_THREADS];
 	std::vector<TreeNode> *pendingFinish;
 	//ompp_loc
-	//std::string latestCallSite[NUM_THREADS+1];
 	std::map<std::string, int> callSitesToRemove;
+	//int prevParRegion;
 	//loop dynamic
-	unsigned long prevLoopCallsite[NUM_THREADS+1];
-	int firstDispatch[NUM_THREADS+1];//1 denotes its the first dispatch, 0 otherwise
+	unsigned long prevLoopCallsite[NUM_THREADS];
+	int firstDispatch[NUM_THREADS];//1 denotes its the first dispatch, 0 otherwise
 	
 	void cleanupFinishNode(ompt_thread_id_t tid);
-	//util
+	//util functions
 	int createDir(const char* dirName);
 	int dirExists(const char *path);
 public:
 	OpenmpProfiler();
+	~OpenmpProfiler();
 	void initProfiler(ompt_thread_id_t serial_thread_id, ompt_parallel_id_t serial_parallel_id, ompt_task_id_t serial_task_id);
 	void captureThreadBegin(ompt_thread_id_t tid);
 	void captureThreadEnd(ompt_thread_id_t tid);
-	void captureParallelBegin(ompt_thread_id_t tid,ompt_task_id_t parent_task_id, ompt_parallel_id_t parallel_id, uint32_t requested_team_size, void *parallel_function, const char* loc);
+	void captureParallelBegin(ompt_thread_id_t tid,ompt_task_id_t parent_task_id, ompt_parallel_id_t parallel_id, uint32_t requested_team_size, const char* loc);
 	void captureParallelEnd(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id);
+	void syncEnd();
 	void captureMasterBegin(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id,const char* loc);
 	void captureMasterEnd(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id);
 	//single
 	void captureSingleBegin(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id, const char* loc);
 	void captureSingleEnd(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id);
-	void captureTaskBegin(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t parent_task_id, ompt_task_id_t new_task_id, void *new_task_function);
+	void captureTaskBegin(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t parent_task_id, ompt_task_id_t new_task_id);
 	void captureTaskEnd(ompt_thread_id_t tid, ompt_task_id_t task_id);
 	void captureImplicitTaskBegin(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id,const char* loc);
 	void captureImplicitTaskEnd(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id);
@@ -84,6 +89,7 @@ public:
 	void captureLoopBegin(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id, const char* loc);
 	void captureLoopEnd(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id);
 	//loop dynamic
+	//TODO
 	void captureLoopChunk(ompt_thread_id_t tid, int lb, int ub, int st, int last);
 	void captureLoopChunk(ompt_thread_id_t tid, int last);
 	int getFirstDispatch(ompt_thread_id_t tid);
@@ -93,6 +99,7 @@ public:
 	 *  Format of output is task id, n, addr_1, type_1, ..., addr_n, type_n 
 	 * */
 	void captureTaskDependences(ompt_thread_id_t tid, ompt_task_id_t task_id, const ompt_task_dependence_t *deps, int ndeps);
+	//TODO
 	void updateLoc(ompt_thread_id_t tid, const char* file, int line);
 	TreeNode getCurrentParent(ompt_thread_id_t tid);
 	void finishProfile();

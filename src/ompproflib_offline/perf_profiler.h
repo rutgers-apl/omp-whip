@@ -8,7 +8,7 @@
 #include "treeNode.h"
 
 #define NUM_ENTRIES 1024
-
+//will need to replace this with compression based solution
 
 extern OpenmpProfiler omp_profiler;
 extern std::atomic<unsigned long> node_ctr;
@@ -20,6 +20,7 @@ struct CallSiteData {
 };
 
 struct step_work_data {
+    //size_t step_parent;
     unsigned long incrId;
     TreeNode step_parent;
     size_t work;
@@ -30,6 +31,7 @@ struct step_work_data {
 class PerfProfiler{
 private:
     //for debugging 
+    //std::atomic<long> assert_count;
     int ompp_initialized;
     std::ofstream perf_report[NUM_THREADS];
 

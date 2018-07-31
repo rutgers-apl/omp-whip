@@ -2,8 +2,8 @@
 
 OMPP_ROOT=`readlink -f .`
 export OMPP_ROOT 
-LLVM_HOME=$OMPP_ROOT/llvm-omp
-export LLVM_HOME
+#LLVM_HOME=$OMPP_ROOT/llvm-omp
+#export LLVM_HOME
 
 perf list | grep "cpu-cycles OR cycles" &> /dev/null
 if [ $? != 0 ]; then

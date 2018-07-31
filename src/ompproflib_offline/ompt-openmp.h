@@ -1,1 +1,1 @@
-extern int openmp_init();
+//extern int openmp_init();
