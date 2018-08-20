@@ -32,7 +32,6 @@ PerfProfiler::PerfProfiler() {
 }
 
 void PerfProfiler::InitProfiler(){
-      //assert_count = 0;
       ompp_initialized = 1;
       start_count(0);
 }
@@ -49,8 +48,7 @@ return ret;
 long long PerfProfiler::stop_n_get_count (THREADID threadid) {
     #if DEBUG
         return 1;
-    #else
-        //assert_count--;       
+    #else   
         if (perf_fds[threadid] == 0){
             //std::cout << "stop and get count on already closed perf_fd tid= " << threadid << " will return 0 step" << std::endl;
             return 0;
@@ -70,7 +68,6 @@ void PerfProfiler::start_count(THREADID threadid) {
     #if DEBUG
         return;
     #else
-        //assert_count++;
         if (perf_fds[threadid]!=0){
             //std::cout << "start count for already started counter! tid = " << threadid << std::endl;
             return;
@@ -91,7 +88,6 @@ void PerfProfiler::start_count(THREADID threadid) {
         int fd;
         fd = perf_event_open_wrapper(&pe, 0, -1, -1, 0);
         if (fd == -1) {
-            //int t_count = assert_count;
             //fprintf(stderr, "assert count value: %d\n", t_count);
             fprintf(stderr, "Unable to read performance counters. Linux perf event API not supported on the machine. Error number: %d\n", errno);
             exit(EXIT_FAILURE);
@@ -139,7 +135,7 @@ void PerfProfiler::CaptureParallelBegin(THREADID threadid){
   //TODO replace dummy value
   //step_work_list[threadid][last_allocated[threadid]].step_parent = taskGraph->getCurStep(threadid);
   //std::cout << "getting treeNode from threadid: " << threadid+1 << std::endl;
-  TreeNode node = omp_profiler.getCurrentParent(threadid);
+  TreeNode node = omp_profiler->getCurrentParent(threadid);
   step_work_list[threadid][last_allocated[threadid]].step_parent = node;
   step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
   //step_work_list[threadid][last_allocated[threadid]].step_parent = 0;
@@ -192,7 +188,7 @@ void PerfProfiler::CaptureMasterBegin(THREADID threadid){
         
     }
 
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
     step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
     step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -234,7 +230,7 @@ void PerfProfiler::CaptureMasterEnd(THREADID threadid){
         ClearStepWorkListEntry(threadid);
     }
     
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
     step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
     step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -281,7 +277,7 @@ void PerfProfiler::CaptureSingleBeginEnter(THREADID threadid){
         
     }
 
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
     step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
     step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -334,7 +330,7 @@ void PerfProfiler::CaptureSingleEndEnter(THREADID threadid){
         
     }
     
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
     step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
     step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -402,7 +398,7 @@ void PerfProfiler::CaptureTaskEnd(THREADID threadid){
         //step_work_list[threadid][last_allocated[threadid]].work = 0;
         ClearStepWorkListEntry(threadid);    
     }
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
     step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
     step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -463,7 +459,7 @@ void PerfProfiler::CaptureImplicitTaskEnd(THREADID threadid){
       //TODO replace dummy value
       //step_work_list[threadid][last_allocated[threadid]].step_parent = taskGraph->getCurStep(threadid);
       //step_work_list[threadid][last_allocated[threadid]].step_parent = 2;
-      TreeNode node = omp_profiler.getCurrentParent(threadid);
+      TreeNode node = omp_profiler->getCurrentParent(threadid);
       step_work_list[threadid][last_allocated[threadid]].step_parent = node;
       step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
       step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -507,7 +503,7 @@ void PerfProfiler::CaptureTaskWaitBegin(THREADID threadid){
         ClearStepWorkListEntry(threadid);
       }
       
-      TreeNode node = omp_profiler.getCurrentParent(threadid);
+      TreeNode node = omp_profiler->getCurrentParent(threadid);
       step_work_list[threadid][last_allocated[threadid]].step_parent = node;
       step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
       step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -522,37 +518,6 @@ void PerfProfiler::CaptureTaskWaitEnd(THREADID threadid){
     }
     start_count(threadid);
 }
-
-/*void PerfProfiler::CaptureTaskExecute(THREADID threadid){
-    start_count(threadid);
-}*/
-
-/*void PerfProfiler::CaptureTaskExecuteReturn(THREADID threadid){
-    long long count = stop_n_get_count(threadid);
-    
-        if (last_allocated[threadid] == NUM_ENTRIES) {
-        //write to file
-            for (unsigned int i = 0; i < NUM_ENTRIES; i++) {
-                perf_report[threadid] << step_work_list[threadid][i].incrId << ", "
-                << step_work_list[threadid][i].step_parent << ","
-                    << step_work_list[threadid][i].work;
-                perf_report[threadid] << std::endl;
-        }
-    
-        //updated last_allocated to 0
-        last_allocated[threadid] = 0;
-        step_work_list[threadid][last_allocated[threadid]].work = 0;
-      }
-      //TODO replace dummy value
-      //step_work_list[threadid][last_allocated[threadid]].step_parent = taskGraph->getCurStep(threadid);
-      //step_work_list[threadid][last_allocated[threadid]].step_parent = 21;
-      TreeNode node = omp_profiler.getCurrentParent(threadid+1);
-      step_work_list[threadid][last_allocated[threadid]].step_parent = node;
-      step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
-      step_work_list[threadid][last_allocated[threadid]].work += count;
-      last_allocated[threadid]++;
-      step_work_list[threadid][last_allocated[threadid]].work = 0;
-}*/
 
 void PerfProfiler::CaptureBarrierBegin(THREADID threadid){
     if (ompp_initialized==0){
@@ -592,7 +557,7 @@ void PerfProfiler::CaptureBarrierBegin(THREADID threadid){
         }*/
       }
 
-      TreeNode node = omp_profiler.getCurrentParent(threadid);
+      TreeNode node = omp_profiler->getCurrentParent(threadid);
       //TreeNode node(NodeType::NO_TYPE);
       step_work_list[threadid][last_allocated[threadid]].step_parent = node;
       step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
@@ -646,7 +611,7 @@ void PerfProfiler::CaptureTaskAllocEnter(THREADID threadid){
     //TODO replace dummy value
     //step_work_list[threadid][last_allocated[threadid]].step_parent = taskGraph->getCurStep(threadid);
     //step_work_list[threadid][last_allocated[threadid]].step_parent = 1;
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     //std::cout << "[temp log] in capture taskalloc enter current parent ctr_id = " << node.incrId << std::endl;
     //std::cout << "[temp log] in capture taskalloc enter current parent ctr_id = " << node << std::endl;
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
@@ -698,7 +663,7 @@ void PerfProfiler::CaptureCausalBegin(THREADID threadid, const char* file, int l
         ClearStepWorkListEntry(threadid);
     }
 
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
     step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
     step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -742,7 +707,7 @@ void PerfProfiler::CaptureCausalEnd(THREADID threadid, const char* file, int lin
         ClearStepWorkListEntry(threadid);
     }
 
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
     step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
     step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -811,7 +776,7 @@ void PerfProfiler::CaptureWaitCritical(THREADID threadid, uint64_t lockId){
         
     }
     
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
     step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
     step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -859,7 +824,7 @@ void PerfProfiler::CaptureReleaseCritical(THREADID threadid, uint64_t lockId){
     }
     
     //std::cout << "[perf_prof] in capture release critical lock id= " << lockId << std::endl;
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
     step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
     step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -905,7 +870,7 @@ void PerfProfiler::CaptureLoopBeginEnter(THREADID threadid){
         
     }
 
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
     step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
     step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -957,7 +922,7 @@ void PerfProfiler::CaptureLoopEndEnter(THREADID threadid){
         ClearStepWorkListEntry(threadid);
     }
     
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
     step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
     step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -1009,7 +974,7 @@ void PerfProfiler::CaptureLoopChunkEnter(THREADID threadid){
         ClearStepWorkListEntry(threadid);
     }
     
-    TreeNode node = omp_profiler.getCurrentParent(threadid);
+    TreeNode node = omp_profiler->getCurrentParent(threadid);
     step_work_list[threadid][last_allocated[threadid]].step_parent = node;
     step_work_list[threadid][last_allocated[threadid]].incrId = ++node_ctr;
     step_work_list[threadid][last_allocated[threadid]].work += count;
@@ -1054,7 +1019,7 @@ void PerfProfiler::finishProfile(){
         }
     }
       
-    TreeNode cur_step = omp_profiler.getCurrentParent(0);
+    TreeNode cur_step = omp_profiler->getCurrentParent(0);
 
     perf_report[0] << ++node_ctr << "," << cur_step << "," << count;
     
@@ -1088,6 +1053,3 @@ void PerfProfiler::finishProfile(){
     std::cout<<"PerfProfiler::finishProfile done" << std::endl;
 }
 
-void PerfProfiler::serialize(std::ofstream& strm, step_work_data step){
-    
-}

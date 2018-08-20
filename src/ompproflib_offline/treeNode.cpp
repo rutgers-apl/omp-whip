@@ -3,7 +3,7 @@
 TreeNode::TreeNode(){
     type = NodeType::NO_TYPE;
     incrId = 0;
-	pIncrId = 0;
+    pIncrId = 0;
     callSiteId = 0;
     
     young_ns_child = NodeType::NO_TYPE;
@@ -14,7 +14,7 @@ TreeNode::TreeNode(){
 TreeNode::TreeNode(NodeType node_type){
     type = node_type;
     incrId = 0;
-	pIncrId = 0;
+    pIncrId = 0;
     callSiteId = 0;
 
     young_ns_child = NodeType::NO_TYPE;

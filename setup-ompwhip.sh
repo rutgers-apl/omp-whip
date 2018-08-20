@@ -7,7 +7,7 @@ export OMPP_ROOT
 
 perf list | grep "cpu-cycles OR cycles" &> /dev/null
 if [ $? != 0 ]; then
-    echo "Hardware Performance Counters not enabled. TaskProf requires a machine with Hardware Performance Counters. Exiting build."
+    echo "Hardware Performance Counters not enabled. Ompwhip requires a machine with Hardware Performance Counters. Exiting build."
     exit 1    
 else
     export PATH=$LLVM_HOME/bin:$PATH

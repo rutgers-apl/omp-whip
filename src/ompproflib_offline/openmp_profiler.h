@@ -42,18 +42,18 @@ private:
 	unsigned int parNodeIndex;
 	unsigned int num_threads;
 	//flag to avoid race in barrierBegin/end
-	int parBeginFlag;
-	int parEndFlag;
-	int barBeginFlag;
-	int barEndFlag;
-	int barFirstThread;
+	//int parBeginFlag;
+	//int parEndFlag;
+	//int barBeginFlag;
+	//int barEndFlag;
+	//int barFirstThread;
+	
 	int implEndCount;
 	//new sync solution
 	unsigned long barrierCount[NUM_THREADS];
 	std::vector<TreeNode> *pendingFinish;
 	//ompp_loc
 	std::map<std::string, int> callSitesToRemove;
-	//int prevParRegion;
 	//loop dynamic
 	unsigned long prevLoopCallsite[NUM_THREADS];
 	int firstDispatch[NUM_THREADS];//1 denotes its the first dispatch, 0 otherwise

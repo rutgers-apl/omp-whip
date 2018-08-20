@@ -18,7 +18,6 @@
 
 //to detect system arch
 #include "kmp_platform.h"
-
 //*****************************************************************************
 // macros
 //*****************************************************************************
@@ -70,6 +69,9 @@ static ompt_get_partition_place_nums_t ompt_get_partition_place_nums;
 static ompt_get_proc_id_t ompt_get_proc_id;
 static ompt_enumerate_states_t ompt_enumerate_states;
 static ompt_enumerate_mutex_impls_t ompt_enumerate_mutex_impls;
+//*****************************************************************************
+// global variables
+//*****************************************************************************
 
 //*****************************************************************************
 // ompt utility functions
@@ -252,7 +254,7 @@ on_ompt_callback_thread_begin(
   "\n", ompt_get_thread_data()->value, ompt_thread_type_t_values[thread_type], 
   thread_type, thread_data->value);
 
-  omp_profiler.captureThreadBegin(thread_data->value);
+  omp_profiler->captureThreadBegin(thread_data->value);
 }
 
 /** @brief called when a thread ends. was not used in ompprof llvm 5.0 version
@@ -296,8 +298,8 @@ on_ompt_callback_parallel_begin(
   encountering_task_frame->exit_frame, encountering_task_frame->enter_frame, 
   parallel_data->value, requested_team_size, codeptr_ra, invoker, psource);
   //print_current_address(0);
-  perf_profiler.CaptureParallelBegin(tid);
-  omp_profiler.captureParallelBegin(tid, encountering_task_data->value, parallel_data->value, 
+  perf_profiler->CaptureParallelBegin(tid);
+  omp_profiler->captureParallelBegin(tid, encountering_task_data->value, parallel_data->value, 
   requested_team_size, psource);
 }
 
@@ -316,12 +318,13 @@ on_ompt_callback_parallel_end(
 
   ompt_data_t* task_data;
   int exists_task = ompt_get_task_info(0, NULL, &task_data, NULL, NULL, NULL);
-  omp_profiler.captureParallelEnd(current_tid,parallel_data->value, exists_task ? task_data->value : 0);
-  perf_profiler.CaptureParallelEnd(current_tid);
+  omp_profiler->captureParallelEnd(current_tid,parallel_data->value, exists_task ? task_data->value : 0);
+  perf_profiler->CaptureParallelEnd(current_tid);
 }
 
-/**
- * TODO add psource
+/** @brief called when an implicit/explicit task is created
+ *  @param psource is the task's directive's source code information unless its the initial task
+ *  @return void
  */
 static void
 on_ompt_callback_task_create(
@@ -330,7 +333,8 @@ on_ompt_callback_task_create(
     ompt_data_t* new_task_data,
     int type,
     int has_dependences,
-    const void *codeptr_ra)
+    const void *codeptr_ra,
+    char const *psource)
 {
   uint64_t current_tid = ompt_get_thread_data()->value;
   if(new_task_data->ptr)
@@ -353,20 +357,20 @@ on_ompt_callback_task_create(
   }
   //check for explicit task here and call task_alloc
   else if(type & ompt_task_explicit){
-    //perf_profiler.CaptureTaskAllocEnter(current_tid);
+    //perf_profiler->CaptureTaskAllocEnter(current_tid);
     //parallel_id and parent_task_id are only used for logging purposes
-    //omp_profiler.captureTaskAlloc(current_tid, ompt_get_parallel_id(0), encountering_task_data ? encountering_task_data->value : 0, 
+    //omp_profiler->captureTaskAlloc(current_tid, ompt_get_parallel_id(0), encountering_task_data ? encountering_task_data->value : 0, 
     //new_task_data->value, NULL, "psource");
-    //perf_profiler.CaptureTaskAllocExit(current_tid);
+    //perf_profiler->CaptureTaskAllocExit(current_tid);
   }
   
   printf("%" PRIu64 ": ompt_event_task_create: parent_task_id=%" PRIu64 
   ", parent_task_frame.exit=%p, parent_task_frame.reenter=%p, new_task_id=%" PRIu64 
-  ", codeptr_ra=%p, task_type=%s=%d, has_dependences=%s\n", 
+  ", codeptr_ra=%p, task_type=%s=%d, has_dependences=%s, loc=%s, \n", 
   ompt_get_thread_data()->value, encountering_task_data ? encountering_task_data->value : 0, 
   encountering_task_frame ? encountering_task_frame->exit_frame : NULL, 
   encountering_task_frame ? encountering_task_frame->enter_frame : NULL, 
-  new_task_data->value, codeptr_ra, buffer, type, has_dependences ? "yes" : "no");
+  new_task_data->value, codeptr_ra, buffer, type, has_dependences ? "yes" : "no", psource);
 }
 
 static void
@@ -381,22 +385,22 @@ on_ompt_callback_task_schedule(
   ompt_get_thread_data()->value, first_task_data->value, second_task_data->value, ompt_task_status_t_values[prior_task_status], prior_task_status);
   //this works if explicit tasks are always tied as is the case with all benchmarks we could find
   //check to refine the exact condition
-  //pass second task data to omp_profiler.captureTaskBegin but let it return if taskmap does not include the taskId
-  //should should not occur and there is an assertion for this in omp_profiler.captureTaskBegin
+  //pass second task data to omp_profiler->captureTaskBegin but let it return if taskmap does not include the taskId
+  //should should not occur and there is an assertion for this in omp_profiler->captureTaskBegin
   ompt_data_t *parallel_data;
   ompt_get_parallel_info(0, &parallel_data, NULL);
   //parent/prior task is only used for logging purposes
-  //omp_profiler.captureTaskBegin(current_tid, parallel_data ? parallel_data->value : 0, 
+  //omp_profiler->captureTaskBegin(current_tid, parallel_data ? parallel_data->value : 0, 
   //                              first_task_data->value, second_task_data->value);
-  //perf_profiler.CaptureTaskBegin(current_tid);
+  //perf_profiler->CaptureTaskBegin(current_tid);
 
   if(prior_task_status == ompt_task_complete)
   {
     printf("%" PRIu64 ": ompt_event_task_end: task_id=%" PRIu64 
     "\n", current_tid, first_task_data->value);
 
-    //perf_profiler.CaptureTaskEnd(current_tid);
-    //omp_profiler.captureTaskEnd(current_tid, first_task_data->value);
+    //perf_profiler->CaptureTaskEnd(current_tid);
+    //omp_profiler->captureTaskEnd(current_tid, first_task_data->value);
   }
 }
 
@@ -417,7 +421,7 @@ on_ompt_callback_task_dependences(
     ompt_task_dependence_flag_t_values[deps[i].dependence_flags], deps[i].dependence_flags);
   }
   #endif
-  omp_profiler.captureTaskDependences(current_tid, task_data->value, deps, ndeps);
+  omp_profiler->captureTaskDependences(current_tid, task_data->value, deps, ndeps);
 }
 
 static void
@@ -455,8 +459,8 @@ on_ompt_callback_sync_region(
           ", task_id=%" PRIu64 ", codeptr_ra=%p\n", 
           ompt_get_thread_data()->value, parallel_data->value, task_data->value, codeptr_ra);
 
-          perf_profiler.CaptureBarrierBegin(current_tid);
-          omp_profiler.captureBarrierBegin(current_tid, parallel_data->value, task_data->value);
+          perf_profiler->CaptureBarrierBegin(current_tid);
+          omp_profiler->captureBarrierBegin(current_tid, parallel_data->value, task_data->value);
           //print_ids(0);
           break;
         case ompt_sync_region_taskwait:
@@ -464,8 +468,8 @@ on_ompt_callback_sync_region(
           ", task_id=%" PRIu64 ", codeptr_ra=%p\n", 
           ompt_get_thread_data()->value, parallel_data->value, task_data->value, codeptr_ra);
 
-          perf_profiler.CaptureTaskWaitBegin(current_tid);
-          omp_profiler.captureTaskwaitBegin(current_tid, parallel_data->value, task_data->value);
+          perf_profiler->CaptureTaskWaitBegin(current_tid);
+          omp_profiler->captureTaskwaitBegin(current_tid, parallel_data->value, task_data->value);
           break;
         case ompt_sync_region_taskgroup:
           printf("%" PRIu64 ": ompt_event_taskgroup_begin: parallel_id=%" PRIu64 ", task_id=%" PRIu64 ", codeptr_ra=%p\n", ompt_get_thread_data()->value, parallel_data->value, task_data->value, codeptr_ra);
@@ -480,17 +484,17 @@ on_ompt_callback_sync_region(
           ", task_id=%" PRIu64 ", codeptr_ra=%p\n", 
           ompt_get_thread_data()->value, (parallel_data)?parallel_data->value:0, task_data->value, codeptr_ra);
 
-          omp_profiler.captureBarrierEnd(current_tid, (parallel_data)?parallel_data->value:0, task_data->value);
+          omp_profiler->captureBarrierEnd(current_tid, (parallel_data)?parallel_data->value:0, task_data->value);
           //this order since perf should start count after profling is done
-          perf_profiler.CaptureBarrierEnd(current_tid);
+          perf_profiler->CaptureBarrierEnd(current_tid);
           break;
         case ompt_sync_region_taskwait:
           printf("%" PRIu64 ": ompt_event_taskwait_end: parallel_id=%" PRIu64 
           ", task_id=%" PRIu64 ", codeptr_ra=%p\n", 
           ompt_get_thread_data()->value, (parallel_data)?parallel_data->value:0, task_data->value, codeptr_ra);
 
-          omp_profiler.captureTaskwaitEnd(current_tid, (parallel_data)?parallel_data->value:0, task_data->value);
-          perf_profiler.CaptureTaskWaitEnd(current_tid);
+          omp_profiler->captureTaskwaitEnd(current_tid, (parallel_data)?parallel_data->value:0, task_data->value);
+          perf_profiler->CaptureTaskWaitEnd(current_tid);
           break;
         case ompt_sync_region_taskgroup:
           printf("%" PRIu64 ": ompt_event_taskgroup_end: parallel_id=%" PRIu64 ", task_id=%" PRIu64 ", codeptr_ra=%p\n", ompt_get_thread_data()->value, (parallel_data)?parallel_data->value:0, task_data->value, codeptr_ra);
@@ -518,8 +522,8 @@ on_ompt_callback_sync_region_wait(
         case ompt_sync_region_barrier:
           printf("%" PRIu64 ": ompt_event_wait_barrier_begin: parallel_id=%" PRIu64 ", task_id=%" PRIu64 ", codeptr_ra=%p\n", ompt_get_thread_data()->value, parallel_data->value, task_data->value, codeptr_ra);
 	//TODO temp
-	// perf_profiler.CaptureImplicitTaskEnd(current_tid);
-      	//omp_profiler.captureImplicitTaskEnd(current_tid, parallel_data->value, task_data->value);
+	// perf_profiler->CaptureImplicitTaskEnd(current_tid);
+      	//omp_profiler->captureImplicitTaskEnd(current_tid, parallel_data->value, task_data->value);
 
           break;
         case ompt_sync_region_taskwait:
@@ -553,7 +557,6 @@ on_ompt_callback_sync_region_wait(
  *  @param task_data is the data associated with the current implicit task. needs to be set up in begin
  *  @param team_size is the size of the current team
  *  @param thread_num is the thread id of the thread running the implicit task within the current time
- *  TODO add psource
  */
 static void
 on_ompt_callback_implicit_task(
@@ -573,18 +576,18 @@ on_ompt_callback_implicit_task(
       task_data->value = omw_next_task_id();
       //cannot use thread_num as it doesn't match the thread_ids set during thread_begin
       
-      omp_profiler.captureImplicitTaskBegin(current_tid, parallel_data->value, task_data->value, "psource");
-      perf_profiler.CaptureImplicitTaskBegin(current_tid);
+      omp_profiler->captureImplicitTaskBegin(current_tid, parallel_data->value, task_data->value, "no source");
+      perf_profiler->CaptureImplicitTaskBegin(current_tid);
       
       printf("%" PRIu64 ": ompt_event_implicit_task_begin: parallel_id=%" PRIu64 
       ", task_id=%" PRIu64 ", team_size=%" PRIu32 ", thread_num=%" PRIu32 "\n", 
       ompt_get_thread_data()->value, parallel_data->value, task_data->value, team_size, thread_num);
       break;
     case ompt_scope_end:
-      perf_profiler.CaptureImplicitTaskEnd(current_tid);
+      perf_profiler->CaptureImplicitTaskEnd(current_tid);
       //since no new node gets created, the second and third argument are not being used except for logging purposes
-      //omp_profiler.captureImplicitTaskEnd(current_tid, 0, task_data->value);
-      omp_profiler.captureImplicitTaskEnd(current_tid, (parallel_data)?parallel_data->value:0, task_data->value);
+      //omp_profiler->captureImplicitTaskEnd(current_tid, 0, task_data->value);
+      omp_profiler->captureImplicitTaskEnd(current_tid, (parallel_data)?parallel_data->value:0, task_data->value);
       printf("%" PRIu64 ": ompt_event_implicit_task_end: parallel_id=%" PRIu64 
       ", task_id=%" PRIu64 ", team_size=%" PRIu32 ", thread_num=%" PRIu32 "\n", 
       ompt_get_thread_data()->value, (parallel_data)?parallel_data->value:0, task_data->value, team_size, thread_num);
@@ -602,7 +605,8 @@ on_ompt_callback_work(
   ompt_data_t *parallel_data,
   ompt_data_t *task_data,
   uint64_t count,
-  const void *codeptr_ra)
+  const void *codeptr_ra,
+  char const *psource)
 {
   uint64_t current_tid = ompt_get_thread_data()->value;
   switch(endpoint)
@@ -615,21 +619,22 @@ on_ompt_callback_work(
           ", parent_task_id=%" PRIu64 ", codeptr_ra=%p, count=%" PRIu64 "\n", 
           ompt_get_thread_data()->value, parallel_data->value, task_data->value, codeptr_ra, count);
 
-          perf_profiler.CaptureLoopBeginEnter(current_tid);
-          omp_profiler.captureLoopBegin(current_tid, parallel_data->value, task_data->value, "psource");
-          perf_profiler.CaptureLoopBeginExit(current_tid);
+          perf_profiler->CaptureLoopBeginEnter(current_tid);
+          omp_profiler->captureLoopBegin(current_tid, parallel_data->value, task_data->value, "psource");
+          perf_profiler->CaptureLoopBeginExit(current_tid);
           break;
         case ompt_work_sections:
           printf("%" PRIu64 ": ompt_event_sections_begin: parallel_id=%" PRIu64 ", parent_task_id=%" PRIu64 ", codeptr_ra=%p, count=%" PRIu64 "\n", ompt_get_thread_data()->value, parallel_data->value, task_data->value, codeptr_ra, count);
           break;
         case ompt_work_single_executor:
           printf("%" PRIu64 ": ompt_event_single_in_block_begin: parallel_id=%" PRIu64 
-          ", parent_task_id=%" PRIu64 ", codeptr_ra=%p, count=%" PRIu64 "\n", 
-          ompt_get_thread_data()->value, parallel_data->value, task_data->value, codeptr_ra, count);
+          ", parent_task_id=%" PRIu64 ", codeptr_ra=%p, count=%" PRIu64 ", loc=%s\n", 
+          ompt_get_thread_data()->value, parallel_data->value, task_data->value, 
+          codeptr_ra, count, psource);
 
-          //perf_profiler.CaptureSingleBeginEnter(current_tid);
-          //omp_profiler.captureSingleBegin(current_tid, parallel_data->value, task_data->value, "psource");
-          //perf_profiler.CaptureSingleBeginExit(current_tid);
+          //perf_profiler->CaptureSingleBeginEnter(current_tid);
+          //omp_profiler->captureSingleBegin(current_tid, parallel_data->value, task_data->value, "psource");
+          //perf_profiler->CaptureSingleBeginExit(current_tid);
           break;
         //no need to handle unless we want to stop counters and generate two work nodes
         case ompt_work_single_other:
@@ -661,9 +666,9 @@ on_ompt_callback_work(
           ", task_id=%" PRIu64 ", codeptr_ra=%p, count=%" PRIu64 "\n", 
           ompt_get_thread_data()->value, parallel_data->value, task_data->value, codeptr_ra, count);
 
-          //perf_profiler.CaptureSingleEndEnter(current_tid);
-          //omp_profiler.captureSingleEnd(current_tid, parallel_data->value, task_data->value, "psource");
-          //perf_profiler.CaptureSingleEndExit(current_tid);
+          //perf_profiler->CaptureSingleEndEnter(current_tid);
+          //omp_profiler->captureSingleEnd(current_tid, parallel_data->value, task_data->value, "psource");
+          //perf_profiler->CaptureSingleEndExit(current_tid);
           break;
         //no need to handle unless we want to stop counters and generate two work nodes 
         case ompt_work_single_other:
@@ -692,26 +697,27 @@ on_ompt_callback_master(
   ompt_scope_endpoint_t endpoint,
   ompt_data_t *parallel_data,
   ompt_data_t *task_data,
-  const void *codeptr_ra)
+  const void *codeptr_ra,
+  char const *psource)
 {
   uint64_t current_tid = ompt_get_thread_data()->value;
   switch(endpoint)
   {
     case ompt_scope_begin:
       printf("%" PRIu64 ": ompt_event_master_begin: parallel_id=%" PRIu64 
-      ", task_id=%" PRIu64 ", codeptr_ra=%p\n", current_tid, 
-      parallel_data->value, task_data->value, codeptr_ra);
+      ", task_id=%" PRIu64 ", codeptr_ra=%p, loc=%s\n", current_tid, 
+      parallel_data->value, task_data->value, codeptr_ra, psource);
       
-      //perf_profiler.CaptureMasterBegin(current_tid);
-      //omp_profiler.captureMasterBegin(current_tid, parallel_data->value, task_data->value, "psource");
+      //perf_profiler->CaptureMasterBegin(current_tid);
+      //omp_profiler->captureMasterBegin(current_tid, parallel_data->value, task_data->value, psource);
       break;
     case ompt_scope_end:
       printf("%" PRIu64 ": ompt_event_master_end: parallel_id=%" PRIu64 
       ", task_id=%" PRIu64 ", codeptr_ra=%p\n", current_tid, 
       parallel_data->value, task_data->value, codeptr_ra);
       
-      //perf_profiler.CaptureMasterEnd(current_tid);
-      //omp_profiler.captureMasterEnd(ompt_get_thread_id(), parallel_data->value, task_data->value);
+      //perf_profiler->CaptureMasterEnd(current_tid);
+      //omp_profiler->captureMasterEnd(ompt_get_thread_id(), parallel_data->value, task_data->value);
       break;
   }
 }
@@ -742,8 +748,8 @@ void ompprof_init(){
   uint64_t serial_task_id = task_data->value;
   //uint64_t serial_task_id = omw_next_task_id();
 
-  omp_profiler.initProfiler(serial_thread_id, serial_parallel_id, serial_task_id);
-  perf_profiler.InitProfiler();
+  omp_profiler->initProfiler(serial_thread_id, serial_parallel_id, serial_task_id);
+  perf_profiler->InitProfiler();
 // #if DEBUG
 //printf("[debug] serial_thread_id = %" PRIu64 ", serial_parallel_id = %" PRIu64 ", serial_task_id = %" PRIu64 "\n", 
 //serial_thread_id,serial_parallel_id,serial_task_id);
@@ -752,13 +758,13 @@ void ompprof_init(){
 
 void ompprof_fini(){
   printf("ompprof_fini start\n");
-//  omp_profiler.syncEnd();
-  perf_profiler.finishProfile();
-  omp_profiler.finishProfile();
+//  omp_profiler->syncEnd();
+  //perf_profiler->finishProfile();
+  //omp_profiler->finishProfile();
 }
 
 void ompprof_sync(){
-  omp_profiler.captureParallelEnd(0,1,1);
+  omp_profiler->captureParallelEnd(0,1,1);
 }
 int ompt_initialize(
   ompt_function_lookup_t lookup,
@@ -766,6 +772,9 @@ int ompt_initialize(
 {
 
   printf("ompt_initialize\n");
+  omp_profiler = new OpenmpProfiler();
+  perf_profiler = new PerfProfiler();
+  //ompwhip_data = new OmpwhipData();
   ompt_set_callback = (ompt_set_callback_t) lookup("ompt_set_callback");
   ompt_get_task_info = (ompt_get_task_info_t) lookup("ompt_get_task_info");
   ompt_get_thread_data = (ompt_get_thread_data_t) lookup("ompt_get_thread_data");
@@ -787,11 +796,13 @@ int ompt_initialize(
   register_callback_t(ompt_callback_sync_region_wait, ompt_callback_sync_region_t);
   register_callback(ompt_callback_implicit_task);
   
-  register_callback(ompt_callback_work);
-  register_callback(ompt_callback_master);
+  //register_callback(ompt_callback_work);
+  register_callback_t(ompt_callback_work, ompt_callback_work_wloc_t);
+  //register_callback(ompt_callback_master);
+  register_callback_t(ompt_callback_master, ompt_callback_master_wloc_t);
   register_callback_t(ompt_callback_parallel_begin, ompt_callback_parallel_begin_wloc_t);
   register_callback(ompt_callback_parallel_end);
-  register_callback(ompt_callback_task_create);
+  register_callback_t(ompt_callback_task_create,ompt_callback_task_create_wloc_t);
   register_callback(ompt_callback_task_schedule);
   register_callback(ompt_callback_task_dependences);
   register_callback(ompt_callback_task_dependence);
@@ -805,9 +816,11 @@ int ompt_initialize(
 void ompt_finalize(ompt_data_t* data)
 {
   printf("ompt_finalize\n");
- // perf_profiler.finishProfile();
- // omp_profiler.finishProfile();
-
+  perf_profiler->finishProfile();
+  omp_profiler->finishProfile();
+  delete omp_profiler;
+  delete perf_profiler;
+  //delete ompwhip_data;
 }
 
 

@@ -329,20 +329,20 @@ void ProfileReader::ReadStepNodes(std::string filename, int num){
 }
 
 void ProfileReader::ReadInternalNodes(std::string filename, int num){
-    std::string fileName = "log/" + filename + "_1.csv";
+    std::string fileName = "log/" + filename + "_0.csv";
     std::ifstream f(fileName);
     if (!f.good()){
         std::cout << "couldn't find internal node information in the log directory. exiting" << std::endl;
         exit(1);
     }
     
-    for (int i=1; i<=num; i++){
+    for (int i=0; i<num; i++){
         std::string fileName = "log/" + filename + "_" + std::to_string(i) + ".csv";
         ReadTreeFile(fileName);
     }
 
     //read revised nodes
-    for (int i=1; i<=num; i++){
+    for (int i=0; i<num; i++){
         std::string fileName = "log/rev_" + filename + "_" + std::to_string(i) + ".csv";
         ReadRevisedTreeFile(fileName);
     }
@@ -373,14 +373,14 @@ void ProfileReader::ReadInternalNodes(std::string filename, int num){
 
 void ProfileReader::ReadTaskDepedences(std::string filename, int num){
     std::cout << "Reading task dependences" << std::endl;
-    std::string fileName = "log/" + filename + "_1.csv";
+    std::string fileName = "log/" + filename + "_0.csv";
     std::ifstream f(fileName);
     if (!f.good()){
         std::cout << "couldn't find task dependency information in the log directory. Will not perform task depedency analysis" << std::endl;
         return;
     }
 
-    for (int i=1; i<=num; i++){
+    for (int i=0; i<num; i++){
         std::string fileName = "log/" + filename + "_" + std::to_string(i) + ".csv";
         ReadTaskDepedenceFile(fileName);
     }

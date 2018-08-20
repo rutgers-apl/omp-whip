@@ -10,7 +10,7 @@
 #define NUM_ENTRIES 1024
 //will need to replace this with compression based solution
 
-extern OpenmpProfiler omp_profiler;
+extern OpenmpProfiler *omp_profiler;
 extern std::atomic<unsigned long> node_ctr;
 
 struct CallSiteData {
@@ -31,7 +31,6 @@ struct step_work_data {
 class PerfProfiler{
 private:
     //for debugging 
-    //std::atomic<long> assert_count;
     int ompp_initialized;
     std::ofstream perf_report[NUM_THREADS];
 
@@ -62,9 +61,7 @@ public:
 	void CaptureTaskEnd(THREADID threadid);//
     void CaptureImplicitTaskBegin(THREADID threadid);//
     void CaptureImplicitTaskEnd(THREADID threadid);//
-    //the following 2 capture calls need to be inserted into the IR as there are no associated ompt event with them
-    //void CaptureTaskExecute(THREADID threadid);//
-    //void CaptureTaskExecuteReturn(THREADID threadid);//
+
     void CaptureTaskWaitBegin(THREADID threadid);
     void CaptureTaskWaitEnd(THREADID threadid);
     void CaptureBarrierBegin(THREADID threadid);
@@ -86,8 +83,7 @@ public:
 
     void CaptureLoopChunkEnter(THREADID threadid);
     void CaptureLoopChunkExit(THREADID threadid);
-    void finishProfile();//
-    void serialize(std::ofstream& strm, step_work_data step);
+    void finishProfile();
 };
 
 #endif
