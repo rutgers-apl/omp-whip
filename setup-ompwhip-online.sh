@@ -20,19 +20,10 @@ else
     echo $LLVM_LIB
     export LLVM_LIB
 
-    #build analyzer
-    cd $OMPP_ROOT 
-    cd src/analyzer
-    PGEN=`readlink -f .`
-    echo $PGEN
-    export PGEN
-    make clean
-    make
-
     #build profiler
     cd $OMPP_ROOT
     cd src/ompproflib_online
-    make cleanall
+    make clean
     make
     cd $OMPP_ROOT/src
     rm -f ompproflib

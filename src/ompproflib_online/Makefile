@@ -38,7 +38,5 @@ libompprof: ompt-tool.o causalProfiler.o openmp_profiler.o perf_profiler.o treeN
 
 
 clean:
-	rm -rf *.o *~
-
-cleanall:
 	rm -rf *.o *.a *~
+

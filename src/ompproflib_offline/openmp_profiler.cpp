@@ -1,7 +1,7 @@
 #include "openmp_profiler.h"
 
 //set to one to get log report
-#define DEBUG 1
+#define DEBUG 0
 
 pthread_mutex_t report_map_mutex = PTHREAD_MUTEX_INITIALIZER; 
 

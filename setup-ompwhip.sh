@@ -32,7 +32,7 @@ else
     #build profiler
     cd $OMPP_ROOT
     cd src/ompproflib_offline
-    make cleanall
+    make clean
     make
     cd $OMPP_ROOT/src
     rm -f ompproflib

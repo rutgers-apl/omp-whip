@@ -1,7 +1,7 @@
 #include "openmp_profiler.h"
 
 //set to one to get log report
-#define DEBUG 0
+#define DEBUG 1
 
 pthread_mutex_t report_map_mutex = PTHREAD_MUTEX_INITIALIZER; 
 
@@ -169,7 +169,7 @@ TreeNode* OpenmpProfiler::popNode(ompt_thread_id_t tid){
 	assert(!last_nodes[tid].empty());
 	TreeNode* node = last_nodes[tid].back();
 	TreeNode* parent_node = node->parent_ptr;
-	
+	assert(parent_node!=nullptr);
 	#if DEBUG
 	pthread_mutex_lock(&debug_log_mutex);
 	std::cout << "popNode: node_id = " << node->incrId << ", node type = " << node->type 
@@ -308,11 +308,7 @@ TreeNode* OpenmpProfiler::popNode(ompt_thread_id_t tid){
 		}
 		pthread_mutex_unlock(&parent_node->object_lock);
 	}	
-	else{
-		std::cout << "popping an unidentified node type! node_id = " << node->incrId << " , node_type = " << node->type
-		<< std::endl;
-		assert(false);
-	}
+	
 
 	cleanupNode(node);
 	last_nodes[tid].pop_back();
@@ -461,7 +457,7 @@ void OpenmpProfiler::captureParallelEnd(ompt_thread_id_t tid,ompt_parallel_id_t 
 	#endif
 }
 
-//TODO fix this
+//TODO fix this for the online profiler
 void OpenmpProfiler::captureMasterBegin(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id, const char* loc){
 	if (ompp_initialized==0){
         return;
@@ -732,9 +728,10 @@ void OpenmpProfiler::captureImplicitTaskBegin(
 		//barrierCount[tid] = 0;
 		//pendingFinish->clear();
 
+		//TODO find the cause of this assertion failing in online profiler!!!
 		//assert(last_nodes[tid].size() == 0);
 		//todo why is this happening in online but not in offline?
-		last_nodes[tid].clear();
+		//last_nodes[tid].clear();
 
 		//temp debug
 		//if (last_nodes[tid].size()!=0){
@@ -790,7 +787,7 @@ void OpenmpProfiler::captureImplicitTaskEnd(
 	#endif
 	//pop async representing implicit task
 	#if DEBUG
-	std::cout << "implicit task end popping asycn. node_id= " << last_nodes[tid].back()->incrId << std::endl;
+	std::cout << "implicit task end popping async. node_id= " << last_nodes[tid].back()->incrId << std::endl;
 	#endif
 	popNode(tid);
 	//pop finish associated with current barrier
@@ -825,12 +822,6 @@ void OpenmpProfiler::captureBarrierBegin(
 	<< ", task_id = " << task_id << std::endl;
 	#endif
 
-	#if DEBUG
-	report[tid] << "[captureBarrierBegin] done. last_nodes size = " << last_nodes[tid].size() 
-	<< ", last_nodes: " << last_nodes[tid] << std::endl;
-	#endif
-
-	
 	assert(last_nodes[tid].back()->type == NodeType::ASYNC);
 	popNode(tid);
 	assert(last_nodes[tid].back()->type == NodeType::FINISH);
@@ -877,9 +868,13 @@ void OpenmpProfiler::captureBarrierBegin(
 	
 	pthread_mutex_unlock(&bar_mutex);
 
+
 	#if DEBUG
-	report[tid]<< "[captureBarrierBegin] done. last_nodes[" << tid << "]="  << last_nodes[tid]  << std::endl;
+	report[tid] << "[captureBarrierBegin] done. last_nodes size = " << last_nodes[tid].size() 
+	<< ", last_nodes: " << last_nodes[tid] << std::endl;
 	#endif
+
+
 }
 
 void OpenmpProfiler::captureBarrierEnd(
@@ -895,7 +890,61 @@ void OpenmpProfiler::captureBarrierEnd(
 	report[tid] << "[captureBarrierEnd] start. parallel_id = " << parallel_id 
 	<< ", task_id = " << task_id << std::endl;
 	#endif
+
+	//pop back the finish nodes associated with tasking constructs in appearing in master
+	//while(last_nodes[tid].back()->type != NodeType::ASYNC){
+	//	last_nodes[tid].pop_back();
+	//}
+	/*
+	assert(last_nodes[tid].back()->type == NodeType::ASYNC);
+	popNode(tid);
+	assert(last_nodes[tid].back()->type == NodeType::FINISH);
+	popNode(tid);
 	
+	pthread_mutex_lock(&bar_mutex);
+		barrierCount[tid]+=1;
+		int maxCount =0;
+		for (int i=0; i<num_threads; ++i){
+			if (i==tid) continue;
+			if (barrierCount[i] > maxCount){
+				maxCount = barrierCount[i];
+			}
+		}
+
+		if (barrierCount[tid] > maxCount){//this is the first thread visiting the barrier
+			assert(pendingFinish.size()+1 == barrierCount[tid]);
+			TreeNode* new_finish = new TreeNode(NodeType::FINISH);
+			new_finish->incrId = ++node_ctr;
+			new_finish->parent_ptr = getParent(tid);
+			#if DEBUG
+			std::cout << "barrier begin first thread pushing finish. node_id = " << new_finish->incrId << std::endl;
+			#endif
+			pushNode(tid, new_finish, true);
+			pendingFinish.push_back(new_finish);
+
+		}
+		else{//other threads
+			assert(pendingFinish.size() >= barrierCount[tid]);
+			auto index = barrierCount[tid]-1;
+			TreeNode* par_finish = pendingFinish.at(index);
+			//TODO this probably needs fixing
+			#if DEBUG
+			std::cout << "barrier begin thread pushing finish. node_id = " << par_finish->incrId << std::endl;
+			#endif
+			last_nodes[tid].push_back(par_finish);	
+			
+		}
+		
+	TreeNode* new_async = new TreeNode(NodeType::ASYNC);
+	new_async->incrId = ++node_ctr;
+	new_async->parent_ptr = getParent(tid);
+	pushNode(tid, new_async);
+	
+	pthread_mutex_unlock(&bar_mutex);
+	*/
+	#if DEBUG
+	report[tid]<< "[captureBarrierEnd] done. last_nodes[" << tid << "]="  << last_nodes[tid]  << std::endl;
+	#endif
 }
 
 void OpenmpProfiler::captureTaskwaitBegin(

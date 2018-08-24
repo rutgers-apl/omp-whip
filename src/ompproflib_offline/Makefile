@@ -21,7 +21,6 @@ CC = clang -gdwarf-3 -std=c11
 CXX = clang++ -gdwarf-3 -std=c++11
 
 OMPFLAGS = -fopenmp
-#BASE_FLAGS= -DOMPT_DEBUG -g $(INCLUDES)
 BASE_FLAGS= -g $(INCLUDES)
 FLAGS = $(OMPFLAGS) $(BASE_FLAGS)
 
@@ -38,7 +37,5 @@ libompprof: ompt-tool.o causalProfiler.o openmp_profiler.o perf_profiler.o treeN
 
 
 clean:
-	rm -rf *.o *~
-
-cleanall:
 	rm -rf *.o *.a *~
+
