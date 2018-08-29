@@ -1,12 +1,13 @@
 #include "openmp_profiler.h"
 
 //set to one to get log report
-#define DEBUG 1
+#define DEBUG 0
 
 pthread_mutex_t report_map_mutex = PTHREAD_MUTEX_INITIALIZER; 
 
 pthread_mutex_t bar_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t bar_finish_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t task_finish_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t par_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t all_callsites_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t debug_log_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -31,7 +32,8 @@ OpenmpProfiler::OpenmpProfiler(){
 			exit(1);
 		}
 	}
-
+	//temporarily commented out as omp calls are not allowed in ompt callbacks
+	//which leads to deadlock in llvm 6.0.1
 	//int num_procs = omp_get_num_procs();
 	//TEMP fix
 	num_procs = 16;
@@ -43,6 +45,10 @@ OpenmpProfiler::OpenmpProfiler(){
 	}
 	num_threads = num_procs;
 	for (unsigned int i = 0; i < NUM_THREADS; i++) {
+		#ifdef DEBUG
+		std::string file_name = "log/log_" + std::to_string(i) + ".csv";
+		report[i].open(file_name);
+		#endif
 		prevLoopCallsite[i] = 0;
 		firstDispatch[i] = 0;
 		barrierCount[i] = 0;
@@ -54,13 +60,15 @@ OpenmpProfiler::OpenmpProfiler(){
 	std::cout << "profiler initialized." << std::endl;
 }
 
+/** @brief Destructor call. Ensure that it doesn't get called before finishProfile
+ */
 OpenmpProfiler::~OpenmpProfiler(){
 	std::cout << "[OpenmpProfiler] dtor called" << std::endl;
 }
 
 /** @brief create a directory. utility function
  *  @param dirName the name of the directory to be created
- *  @return 0 on success !!! 
+ *  @return 0 on success -1 on failure
  */
 int OpenmpProfiler::createDir(const char* dirName){
   const int dirErr = mkdir(dirName, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
@@ -69,7 +77,6 @@ int OpenmpProfiler::createDir(const char* dirName){
     std::cout << "Error creating directory!" << std::endl;
   }
   return dirErr;
-
 }
 
 /** @brief check if directory exists. utility function
@@ -86,12 +93,21 @@ int OpenmpProfiler::dirExists(const char *path){
         return 0;
 }
 
+/** Called to cleanup the finish node associated with a first task alloc
+ */
 inline void OpenmpProfiler::cleanupFinishNode(ompt_thread_id_t tid){
-
+	//is snchronization needed due to cleanup_flag check read and write
 	if (last_nodes[tid].back()->finish_flag == true){
-		popNode(tid);
+		pthread_mutex_lock(&task_finish_mutex);
+		if (!last_nodes[tid].back()->cleanup_flag){
+			last_nodes[tid].back()->cleanup_flag=true;
+			pthread_mutex_unlock(&task_finish_mutex);
+			popNode(tid);
+			return;
+		}
+		pthread_mutex_unlock(&task_finish_mutex);
 	}
-	
+		
 }
 
 void OpenmpProfiler::cleanupNode(TreeNode* node){
@@ -106,7 +122,7 @@ void OpenmpProfiler::initProfiler(ompt_thread_id_t serial_thread_id, ompt_parall
 	#if DEBUG
 	report[serial_thread_id] << "inside initProfiler serial_thread_id= " << serial_thread_id 
 	<< " serial_parallel_id= " << serial_parallel_id << " serial_task_id= " << serial_task_id 
-	<< " omp_get_thread_num()= " << omp_get_thread_num() << std::endl;  
+	<< std::endl;  
 	#endif
 
 	TreeNode* root = new TreeNode(NodeType::FINISH);
@@ -117,9 +133,12 @@ void OpenmpProfiler::initProfiler(ompt_thread_id_t serial_thread_id, ompt_parall
 	ompp_initialized = 1;
 }
 
+/** @brief allocate the root finish node and push it into the thread's stack
+ */
 void OpenmpProfiler::pushRootNode(ompt_thread_id_t tid, TreeNode* node){
 	#if DEBUG
 	std::cout << "pushNode root: node_id = " << node->incrId << ", node type = " << node->type << std::endl; 
+	report[tid] << "pushNode root: node_id = " << node->incrId << ", node type = " << node->type << std::endl; 
 	#endif
 
 	node->p_left_sibling_work = 0;
@@ -134,6 +153,8 @@ void OpenmpProfiler::pushRootNode(ompt_thread_id_t tid, TreeNode* node){
 
 }
 
+/** @brief allocate a treeNode and push it into the thread's stack
+ */
 void OpenmpProfiler::pushNode(ompt_thread_id_t tid, TreeNode* node, bool is_barrier_finish=false){
 
 
@@ -144,11 +165,18 @@ void OpenmpProfiler::pushNode(ompt_thread_id_t tid, TreeNode* node, bool is_barr
 
 	#if DEBUG
 	pthread_mutex_lock(&debug_log_mutex);
-	std::cout << "pushNode: node_id = " << node->incrId << ", node type = " << node->type << ", node callSite = "
-	<< node->callSiteId 
+	/*std::cout << tid << ":" << "pushNode, node_id = " << node->incrId << ", node type = " 
+	<< node->type << ", node callSite = "<< node->callSiteId 
 	<< ", parent_id = " << node->parent_ptr->incrId << ", parent type = " << node->parent_ptr->type  
 	<< ", parent callSite= " << node->parent_ptr->callSiteId << ", node p_left_sibling_work = " 
 	<< node->p_left_sibling_work << ", node p_left_sibling_e_work = " <<  node->p_left_sibling_e_work
+	<<  std::endl; */
+	report[tid] << "pushNode, node_id = " << node->incrId << ", node type = " 
+	<< node->type << ", node callSite = "<< node->callSiteId 
+	<< ", parent_id = " << node->parent_ptr->incrId << ", parent type = " << node->parent_ptr->type  
+	<< ", parent callSite= " << node->parent_ptr->callSiteId
+	//<< ", node p_left_sibling_work = " 
+	//<< node->p_left_sibling_work << ", node p_left_sibling_e_work = " <<  node->p_left_sibling_e_work
 	<<  std::endl; 
 	pthread_mutex_unlock(&debug_log_mutex);
 	#endif
@@ -165,6 +193,10 @@ void OpenmpProfiler::pushNode(ompt_thread_id_t tid, TreeNode* node, bool is_barr
 	last_nodes[tid].push_back(node);
 }
 
+/** @brief pop a node from a thread stack's
+ *  not all popNode's are the same (finish_flag and is_barrier_finish)
+ *  but a final node pop updates the parant cWork and work values
+ */
 TreeNode* OpenmpProfiler::popNode(ompt_thread_id_t tid){
 	assert(!last_nodes[tid].empty());
 	TreeNode* node = last_nodes[tid].back();
@@ -172,12 +204,27 @@ TreeNode* OpenmpProfiler::popNode(ompt_thread_id_t tid){
 	assert(parent_node!=nullptr);
 	#if DEBUG
 	pthread_mutex_lock(&debug_log_mutex);
-	std::cout << "popNode: node_id = " << node->incrId << ", node type = " << node->type 
-	<< ", node callSite = " << node->callSiteId << std::endl; 
+	/*std::cout << "popNode: node_id = " << node->incrId << ", node type = " << node->type 
+	<< ", node callSite = " << node->callSiteId << std::endl; */
+	report[tid] << "popNode: node_id = " << node->incrId << ", node type = " << node->type 
+	<< ", node callSite = " << node->callSiteId 
+	<< ", parent_id = " << parent_node->incrId << std::endl; 
 	pthread_mutex_unlock(&debug_log_mutex);
 	#endif
 	
-	if (node->is_barrier_finish){
+	//do not fully pop a finish task node (finish_flag == true) unless all of its children including itself have called popNode
+	if (node->finish_flag == true){
+		pthread_mutex_lock(&task_finish_mutex);
+		node->child_count--;
+		if(node->child_count > 0){
+			pthread_mutex_unlock(&task_finish_mutex);	
+			last_nodes[tid].pop_back();
+			return node;
+		}
+		pthread_mutex_unlock(&task_finish_mutex);
+	}
+	//do not fully pop a barrier finish node unless its the last thread in the team calling popNode
+	else if (node->is_barrier_finish){
 		pthread_mutex_lock(&bar_finish_mutex);
 		node->child_count++;
 		if(node->child_count != num_threads){//do not pop until all children have been popped
@@ -309,7 +356,6 @@ TreeNode* OpenmpProfiler::popNode(ompt_thread_id_t tid){
 		pthread_mutex_unlock(&parent_node->object_lock);
 	}	
 	
-
 	cleanupNode(node);
 	last_nodes[tid].pop_back();
 	return node;
@@ -343,6 +389,9 @@ void OpenmpProfiler::captureThreadEnd(ompt_thread_id_t tid){
 	//have no use at the moment
 }
 
+/** @brief Master thread crates two finish nodes and pushes them into its stacks
+ * it also sets par_node_index to be used by other threads in implicit_task_begin
+ */
 void OpenmpProfiler::captureParallelBegin(
 	ompt_thread_id_t tid, 
 	ompt_task_id_t parent_task_id, 
@@ -355,9 +404,9 @@ void OpenmpProfiler::captureParallelBegin(
     }
 	
 	#if DEBUG
-	report[tid] << "begin parallel: parallel_id = " << parallel_id << ", parent_task_id = "
-	 << parent_task_id << ", requested team size: " << requested_team_size 
-	 << ", omp_get_thread_num()= " << omp_get_thread_num() << ",loc =" << loc <<  std::endl;
+	report[tid] << "[captureParallelBegin] parallel_id = " << parallel_id << ", parent_task_id = "
+	<< parent_task_id << ", requested team size: " << requested_team_size 
+	<< ",loc =" << loc <<  std::endl;
 	 #endif
 	
 	//check to ensure that the parallel block is not using more threads than the profiler can handle
@@ -365,6 +414,7 @@ void OpenmpProfiler::captureParallelBegin(
 	if (requested_team_size > 0){
 		num_threads = requested_team_size;
 	} else{
+		//problematic?
 		num_threads = omp_get_num_procs();
 	}
 	
@@ -372,6 +422,9 @@ void OpenmpProfiler::captureParallelBegin(
 	#if DEBUG
 	std::cout << "new parallel begin requested team size = " << requested_team_size << std::endl;
 	#endif
+
+	//only root node should be on master's stack
+	assert(last_nodes[tid].size() == 1);
 
 	TreeNode* new_finish = new TreeNode(NodeType::FINISH);
 	new_finish->incrId = ++node_ctr;
@@ -390,13 +443,19 @@ void OpenmpProfiler::captureParallelBegin(
 	pthread_mutex_unlock(&report_map_mutex);
 
 	new_finish->parent_ptr = getParent(tid);
-	pushNode(tid, new_finish);
+
+	pushNode(tid, new_finish, true);
 	
 	TreeNode* new_finish2 = new TreeNode(NodeType::FINISH);
 	new_finish2->incrId = ++node_ctr;
 	new_finish2->parent_ptr = getParent(tid);
+	//push a barrier finish node
 	pushNode(tid, new_finish2, true);
-	
+	//new code
+	par_finish.clear();
+	par_finish.push_back(new_finish);
+	par_finish.push_back(new_finish2);
+
 	//this is only set by the master thread and later read by other threads so there is no race 
 	parNodeIndex = last_nodes[tid].size()-1;
 
@@ -420,11 +479,12 @@ void OpenmpProfiler::captureParallelBegin(
 	// pthread_mutex_unlock(&report_map_mutex);
 	
 	#if DEBUG
-	report[tid] << "parallel begin end" << std::endl;
+	report[tid] << "[captureParallelBegin] done" << std::endl;
 	#endif
 }
 
-
+/** 
+ */
 void OpenmpProfiler::captureParallelEnd(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id)
 {
 	if (ompp_initialized==0){
@@ -445,27 +505,29 @@ void OpenmpProfiler::captureParallelEnd(ompt_thread_id_t tid,ompt_parallel_id_t 
 
 	
 	#if DEBUG
-	std::cout << "parallel end poping parallel finish. node_id= " << last_nodes[tid].back()->incrId << std::endl;
+	std::cout << "[captureParallelEnd] start : popping parallel finish. node_id= " << last_nodes[tid].back()->incrId << std::endl;
 	#endif 
 
+	//remove this and move it to implicit task
 	//pop finish associated with parallel region
 	popNode(tid);
 
 	#if DEBUG
-	report[tid] << "[captureParallelEnd] done parallel_id = " << parallel_id 
+	report[tid] << "[captureParallelEnd] done : parallel_id = " << parallel_id 
 	<< ", task_id = "<< task_id << std::endl; 
 	#endif
 }
 
 //TODO fix this for the online profiler
+
 void OpenmpProfiler::captureMasterBegin(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id, const char* loc){
 	if (ompp_initialized==0){
         return;
     }
 	
 	#if DEBUG
-	report[tid] << "master begin: parallel_id = " << parallel_id << ", task_id = " << task_id 
-	<< " omp_get_thread_num()= " << omp_get_thread_num() << ", loc =" << loc << std::endl;
+	report[tid] << "[captureMasterBegin] start : parallel_id = " << parallel_id 
+	<< ", task_id = " << task_id << ", loc =" << loc << std::endl;
 	#endif
 	
 	assert(loc != nullptr);
@@ -489,7 +551,8 @@ void OpenmpProfiler::captureMasterBegin(ompt_thread_id_t tid,ompt_parallel_id_t 
 	pushNode(tid, new_finish);
 	
 	#if DEBUG
-	report[tid]<< "master beging after push last_nodes[" << tid << "]="  << last_nodes[tid]  << std::endl;
+	report[tid]<< "[captureMasterBegin] done : last_nodes = "  << last_nodes[tid]  
+	<< std::endl;
 	#endif
 }
 
@@ -498,19 +561,20 @@ void OpenmpProfiler::captureMasterEnd(ompt_thread_id_t tid,ompt_parallel_id_t pa
         return;
     }
 	#if DEBUG
-	report[tid] << "master end: parallel_id = " << parallel_id << ", task_id = " << task_id
-	<< " omp_get_thread_num()= " << omp_get_thread_num()  << std::endl;
+	report[tid] << "[captureMasterEnd] start : parallel_id = " << parallel_id 
+	<< ", task_id = " << task_id << std::endl;
 	#endif 
-	#if DEBUG
-	report[tid]<< "master end start last_nodes[" << tid << "]="  << last_nodes[tid]  << std::endl;
-	#endif
+	//#if DEBUG
+	//report[tid]<< "master end start last_nodes ="  << last_nodes[tid]  << std::endl;
+	//#endif
 	
 	assert(!last_nodes[tid].empty());
 	cleanupFinishNode(tid);
 	popNode(tid);
 	
 	#if DEBUG
-	report[tid]<< "master end last_nodes[" << tid << "]="  << last_nodes[tid]  << std::endl;
+	report[tid]<< "[captureMasterEnd] done : last_nodes = "  << last_nodes[tid]  
+	<< std::endl;
 	#endif
 }
 
@@ -520,8 +584,8 @@ void OpenmpProfiler::captureSingleBegin(ompt_thread_id_t tid,ompt_parallel_id_t 
     }
 	
 	#if DEBUG
-	report[tid] << "single begin: parallel_id = " << parallel_id << ", task_id = " << task_id 
-	<< " omp_get_thread_num()= " << omp_get_thread_num() << "loc = " << loc  << std::endl;
+	report[tid] << "[captureSingleBegin] start : parallel_id = " << parallel_id 
+	<< ", task_id = " << task_id << "loc = " << loc  << std::endl;
 	#endif
 	
 	TreeNode* new_finish = new TreeNode(NodeType::FINISH);
@@ -530,6 +594,10 @@ void OpenmpProfiler::captureSingleBegin(ompt_thread_id_t tid,ompt_parallel_id_t 
 	new_finish->parent_ptr = getParent(tid);
 	pushNode(tid, new_finish);
 	
+	#if DEBUG
+	report[tid]<< "[captureSingleBegin] done : last_nodes = "  << last_nodes[tid]  
+	<< std::endl;
+	#endif
 }
 
 void OpenmpProfiler::captureSingleEnd(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id){
@@ -538,23 +606,29 @@ void OpenmpProfiler::captureSingleEnd(ompt_thread_id_t tid,ompt_parallel_id_t pa
     }
 	
 	#if DEBUG
-	report[tid] << "single end: parallel_id = " << parallel_id << ", task_id = " << task_id
-	<< " omp_get_thread_num()= " << omp_get_thread_num()  << std::endl;
+	report[tid] << "[captureSingleEnd] start : parallel_id = " << parallel_id << ", task_id = " 
+	<< task_id << std::endl;
 	#endif
 	
 	assert(!last_nodes[tid].empty());
 	cleanupFinishNode(tid);
 	popNode(tid);
 
+	#if DEBUG
+	report[tid]<< "[captureSingleEnd] done : last_nodes = "  << last_nodes[tid]  
+	<< std::endl;
+	#endif
 }
-
+/** Push finish node
+ * 
+ */
 void OpenmpProfiler::captureLoopBegin(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id, const char* loc){
 	if (ompp_initialized==0){
         return;
     }
 	#if DEBUG
-	report[tid] << "loop begin: parallel_id = " << parallel_id << ", task_id = " << task_id 
-	<< " omp_get_thread_num()= " << omp_get_thread_num() << "loc = " << loc  << std::endl;
+	report[tid] << "[captureLoopBegin] start : parallel_id = " << parallel_id << ", task_id = " 
+	<< task_id << "loc = " << loc  << std::endl;
 	#endif
 	
 	assert(loc != nullptr);
@@ -573,27 +647,39 @@ void OpenmpProfiler::captureLoopBegin(ompt_thread_id_t tid,ompt_parallel_id_t pa
 		loopCallSites[callSiteMap[t_str]] = true;
 		new_finish->callSiteId = callSiteMap[t_str];
 	}
+	prevLoopCallsite[tid] = callSiteMap[t_str];
 	pthread_mutex_unlock(&report_map_mutex);
 	//denotes the current loops callsiteId
-	prevLoopCallsite[tid] = callSiteMap[t_str];
+	
 	firstDispatch[tid] = 1;
 	new_finish->parent_ptr = getParent(tid);
 	pushNode(tid, new_finish);
 	
+	#if DEBUG
+	report[tid] << "[captureLoopBegin] done " << std::endl;
+	#endif
 }
 
+/** Pop finish node
+ * 
+ */
 void OpenmpProfiler::captureLoopEnd(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id){
 	if (ompp_initialized==0){
         return;
     }
 	#if DEBUG
-	report[tid] << "loop end: parallel_id = " << parallel_id << ", task_id = " << task_id
-	<< " omp_get_thread_num()= " << omp_get_thread_num()  << std::endl;
+	report[tid] << "[captureLoopEnd] start : parallel_id = " << parallel_id << ", task_id = " 
+	<< task_id << std::endl;
 	#endif
 
 	assert(!last_nodes[tid].empty());
+	//is this cleanup needed?
 	cleanupFinishNode(tid);
 	popNode(tid);
+
+	#if DEBUG
+	report[tid] << "[captureLoopEnd] done" << std::endl;
+	#endif
 }
 
 void OpenmpProfiler::captureLoopChunk(ompt_thread_id_t tid, int lb, int ub, int st, int last){
@@ -651,7 +737,10 @@ void OpenmpProfiler::captureLoopChunk(ompt_thread_id_t tid, int last){
 	
 }
 
-
+/** @brief called when an explicit task get scheduled and starts running
+ *  push the finish node associated with spawn
+ *  push the async node associated with explicit task
+ */
 void OpenmpProfiler::captureTaskBegin(
 	ompt_thread_id_t tid, 
 	ompt_parallel_id_t parallel_id,
@@ -663,7 +752,7 @@ void OpenmpProfiler::captureTaskBegin(
     }
 
 	#if DEBUG
-	report[tid] << "[captureTaskBegin] start new_task_id = " <<  new_task_id 
+	report[tid] << "[captureTaskBegin] start : new_task_id = " <<  new_task_id 
 	<< ", parallel id = " << parallel_id << ", parent_task_id: " << parent_task_id 
 	<< std::endl;
 	#endif
@@ -673,11 +762,21 @@ void OpenmpProfiler::captureTaskBegin(
 	TreeNode* async_node = taskMap[new_task_id];
 	taskMap.erase(new_task_id);
 	pthread_mutex_unlock(&report_map_mutex);
+	//add finish node to stack
+	pushNode(tid,async_node->parent_ptr);
 	pushNode(tid,async_node);
 	
+
+	#if DEBUG
+	report[tid] << "[captureTaskBegin] done" << std::endl;
+	#endif
 	
 }
 
+/** @brief called when an explicit finishes execution
+ * 	pop the async node associated with explicit task 
+ * 	pop the finish node associated with spawn
+ */
 void OpenmpProfiler::captureTaskEnd(
 	ompt_thread_id_t tid, 
 	ompt_task_id_t task_id)
@@ -686,12 +785,28 @@ void OpenmpProfiler::captureTaskEnd(
         return;
     }
 	
+	#if DEBUG
+	report[tid] << "[captureTaskEnd] start" << std::endl;
+	#endif
+	
 	assert(!last_nodes[tid].empty());
-	cleanupFinishNode(tid);
+	//cleanupFinishNode(tid);
+	//pop async
 	popNode(tid);
+	//pop finish node associated with first task spawnd
+	popNode(tid);
+	
+	#if DEBUG
+	report[tid] << "[captureTaskEnd] done" << std::endl;
+	#endif
 	
 }
 
+/** @brief called when an implicit task starts execution
+ * 	master thread: push async node
+ * 	Other threads: push finish node associated with parallel region and current barrier to stack
+ * 	then push async node
+ */
 void OpenmpProfiler::captureImplicitTaskBegin(
 	ompt_thread_id_t tid,
 	ompt_parallel_id_t parallel_id, 
@@ -709,7 +824,8 @@ void OpenmpProfiler::captureImplicitTaskBegin(
 	
 	#if DEBUG
 	report[tid] << "[captureImplicitTaskBegin] last_nodes size = " << last_nodes[tid].size() 
-	<< " , parNodeIndex =" << parNodeIndex << " , last_nodes " << last_nodes[tid] << std::endl;
+	<< " , parNodeIndex =" << parNodeIndex << " , last_nodes: " << last_nodes[tid] 
+	<< ", last_nodes[0]: " << last_nodes[0] << std::endl;
 	#endif
 
 	if (tid == 0){
@@ -722,26 +838,28 @@ void OpenmpProfiler::captureImplicitTaskBegin(
 			__sync_fetch_and_and(&implEndCount,0);
 			break;
 		}
+	//if (tid != 0){
 	}else{
+		
 		pthread_mutex_lock(&report_map_mutex);
+		//how to make this get called once?
+		
 		//reset barrierCounts at the beginning of a parallel region
 		//barrierCount[tid] = 0;
 		//pendingFinish->clear();
 
-		//TODO find the cause of this assertion failing in online profiler!!!
-		//assert(last_nodes[tid].size() == 0);
-		//todo why is this happening in online but not in offline?
-		//last_nodes[tid].clear();
+		assert(last_nodes[tid].size() == 0);
+		
+		//TODO this assertion fails since master reaches the barrier begin before this completes 
+		//for some worker threads
+		assert(par_finish.size() == 2);
 
-		//temp debug
-		//if (last_nodes[tid].size()!=0){
-		//	std::cout << "last_nodes is not empty at implicitTaskBegin tid=" << tid << std::endl;
-		//	std::cout << "last nodes size=" << last_nodes[tid].size() 
-		//		<< ", last_nodes =" << last_nodes[tid] << std::endl;
-		//}
-		TreeNode* grandParent = last_nodes[0].at(parNodeIndex-1);
+		//assert(last_nodes[0].size() > parNodeIndex);
+		//TreeNode* grandParent = last_nodes[0].at(parNodeIndex-1);
+		TreeNode* grandParent = par_finish.at(0);
 		last_nodes[tid].push_back(grandParent);
-		TreeNode* parent = last_nodes[0].at(parNodeIndex);
+		//TreeNode* parent = last_nodes[0].at(parNodeIndex);
+		TreeNode* parent = par_finish.at(1);
 		last_nodes[tid].push_back(parent);
 		pthread_mutex_unlock(&report_map_mutex);
 
@@ -761,7 +879,10 @@ void OpenmpProfiler::captureImplicitTaskBegin(
 	#endif
 }
 
-
+/**	@brief called when an implicit task finishes execution
+ *  master thread: 
+ * 	other threads:
+ */
 void OpenmpProfiler::captureImplicitTaskEnd(
 	ompt_thread_id_t tid,
 	ompt_parallel_id_t parallel_id, 
@@ -779,6 +900,7 @@ void OpenmpProfiler::captureImplicitTaskEnd(
 	#endif
 
 	assert(!last_nodes[tid].empty());
+	//TODO is this necessary since we always have and implicit barrier end before this call?
 	cleanupFinishNode(tid);
 		
 	#if DEBUG
@@ -796,6 +918,13 @@ void OpenmpProfiler::captureImplicitTaskEnd(
 	#endif 
 	popNode(tid);
 
+	//why?
+	if (tid!=0){
+		assert(!last_nodes[tid].empty());
+		//last_nodes[tid].pop_back();
+		popNode(tid);
+	}
+
 	int count_tmp = __sync_add_and_fetch(&implEndCount,1);
 	#if DEBUG
 	report[tid] << "implEndCount = " << count_tmp << std::endl;
@@ -803,11 +932,17 @@ void OpenmpProfiler::captureImplicitTaskEnd(
 	#endif
 
 	#if DEBUG
+	report[tid] << "[captureImplicitTaskEnd]. done lastNodes.size() = " 
+	<< last_nodes[tid].size() << ", last_nodes: " << last_nodes[tid] << std::endl;
+	#endif
+	#if DEBUG
 	report[tid] << "[captureImplicitTaskEnd] done" << std::endl;
 	#endif
 
 }
-
+/**
+ * pop async node and finish node assocaited with the region before the barrier
+ */
 void OpenmpProfiler::captureBarrierBegin(
 	ompt_thread_id_t tid,
 	ompt_parallel_id_t parallel_id, 
@@ -844,6 +979,7 @@ void OpenmpProfiler::captureBarrierBegin(
 			new_finish->parent_ptr = getParent(tid);
 			#if DEBUG
 			std::cout << "barrier begin first thread pushing finish. node_id = " << new_finish->incrId << std::endl;
+			report[tid] << "barrier begin first thread pushing finish. node_id = " << new_finish->incrId << std::endl;
 			#endif
 			pushNode(tid, new_finish, true);
 			pendingFinish.push_back(new_finish);
@@ -856,6 +992,7 @@ void OpenmpProfiler::captureBarrierBegin(
 			//TODO this probably needs fixing
 			#if DEBUG
 			std::cout << "barrier begin thread pushing finish. node_id = " << par_finish->incrId << std::endl;
+			report[tid] << "barrier begin thread pushing finish. node_id = " << par_finish->incrId << std::endl;
 			#endif
 			last_nodes[tid].push_back(par_finish);	
 			
@@ -942,6 +1079,9 @@ void OpenmpProfiler::captureBarrierEnd(
 	
 	pthread_mutex_unlock(&bar_mutex);
 	*/
+	if(!last_nodes[tid].empty()){
+		cleanupFinishNode(tid);
+	}
 	#if DEBUG
 	report[tid]<< "[captureBarrierEnd] done. last_nodes[" << tid << "]="  << last_nodes[tid]  << std::endl;
 	#endif
@@ -958,12 +1098,12 @@ void OpenmpProfiler::captureTaskwaitBegin(
     }
 	
 	#if DEBUG
-	report[tid] << "taskwait begin: tid = " << tid << ", parallel_id = " << parallel_id << ", task_id= " << task_id 
-	<< " omp_get_thread_num()= " << omp_get_thread_num() << std::endl;
+	report[tid]<< "[captureTaskwaitBegin] start : parallel_id = " << parallel_id 
+	<< ", task_id= " << task_id << std::endl;
 	#endif
 	
 	#if DEBUG
-	report[tid]<< "taskwait end after pop last_nodes[" << tid << "]="  << last_nodes[tid]  << std::endl;
+	report[tid]<< "[captureTaskwaitBegin] done : last_nodes = "  << last_nodes[tid]  << std::endl;
 	#endif
 	
 }
@@ -982,14 +1122,19 @@ void OpenmpProfiler::captureTaskwaitEnd(
 	cleanupFinishNode(tid);
 	
 	#if DEBUG
-	report[tid] << "taskwait end: parallel_id = " << parallel_id << ", task_id = " << task_id 
-	<< " omp_get_thread_num()= " << omp_get_thread_num() << std::endl;
+	report[tid] << "[captureTaskwaitEnd] done : parallel_id = " 
+	<< parallel_id << ", task_id = " << task_id << std::endl;
 	#endif
 	
 	
 	
 }
 
+/**
+ * called when a task directive encountered by a task
+ * create a new finish node if its the first task seen among siblings
+ * create an async node and push it into taskMap
+ */
 void OpenmpProfiler::captureTaskAlloc(
 	ompt_thread_id_t tid,
 	ompt_parallel_id_t parallel_id,
@@ -1002,9 +1147,8 @@ void OpenmpProfiler::captureTaskAlloc(
         return;
     }
 	
-	
 	#if DEBUG
-	report[tid] << "[captureTaskAlloc] new_task_id = " <<  new_task_id 
+	report[tid] << "[captureTaskAlloc] start : new_task_id = " <<  new_task_id 
 	<< ", parallel id = " << parallel_id << ", parent_task_id = " << parent_task_id 
 	<< ", new task fptr: " << ", task func ptr=" << new_task_function << std::endl;
 	#endif
@@ -1016,6 +1160,9 @@ void OpenmpProfiler::captureTaskAlloc(
 	if (last_nodes[tid].back()->young_ns_child == ASYNC){
 		new_async = new TreeNode(NodeType::ASYNC);	
 		new_async->incrId = ++node_ctr;
+		#if DEBUG
+		report[tid] << "[captureTaskAlloc] create async finish parent exists: node_id = " << new_async->incrId << std::endl;
+		#endif
 		new_async->task_id = new_task_id;
 		//callsite
 		pthread_mutex_lock(&report_map_mutex);
@@ -1029,7 +1176,12 @@ void OpenmpProfiler::captureTaskAlloc(
 		}
 		pthread_mutex_unlock(&report_map_mutex);
 		new_async->parent_ptr = getParent(tid);
+		
+
 		pthread_mutex_lock(&report_map_mutex);
+		assert(new_async->parent_ptr->finish_flag == true);
+		//increment child_count to account for spawned task
+		new_async->parent_ptr->child_count++;
 		taskMap[new_task_id] = new_async;
 		pthread_mutex_unlock(&report_map_mutex);
 		
@@ -1041,11 +1193,17 @@ void OpenmpProfiler::captureTaskAlloc(
 		
 		new_finish->young_ns_child = NodeType::ASYNC;
 		new_finish->finish_flag = true;
+		//set child_count to 2 to include self and spawned task
+		new_finish->child_count++;
+		new_finish->child_count++;
 		new_finish->parent_ptr = getParent(tid);
 		pushNode(tid, new_finish);
 		
 		new_async = new TreeNode(NodeType::ASYNC);	
 		new_async->incrId = ++node_ctr;
+		#if DEBUG
+		report[tid] << "[captureTaskAlloc] create async : node_id = " << new_async->incrId << std::endl;
+		#endif
 		new_async->task_id = new_task_id;
 		//callsite
 		pthread_mutex_lock(&report_map_mutex);
@@ -1066,6 +1224,10 @@ void OpenmpProfiler::captureTaskAlloc(
 
 
 	}
+
+	#if DEBUG
+	report[tid] << "[captureTaskAlloc] done" << std::endl;
+	#endif
 
 }
 
@@ -1303,5 +1465,6 @@ void OpenmpProfiler::finishProfile(){
 	std::cout << "profile generation complete" << std::endl;
 
 	callsite_info.close();
+	std::cout << "OpenmpProfiler::finishProfile done" << std::endl;
 	ompp_initialized = 0;
 }

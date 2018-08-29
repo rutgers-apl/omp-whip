@@ -21,6 +21,7 @@ public:
     unsigned long callSiteId;
     NodeType young_ns_child;
     bool finish_flag;    
+    bool cleanup_flag{false};
     ompt_task_id_t task_id;
     //needed for loop callsites
     ompt_parallel_id_t parallel_id{0};

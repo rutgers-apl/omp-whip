@@ -147,8 +147,9 @@ void OpenmpProfiler::captureThreadEnd(ompt_thread_id_t tid){
 	//have no use at the moment
 }
 
-/** @brief 
- * 
+/**
+ * Master thread crates two finish nodes and pushes them into its stacks
+ * it also sets par_node_index to be used by other threads in implicit_task_begin
  */
 void OpenmpProfiler::captureParallelBegin(	
 	ompt_thread_id_t tid,
@@ -256,7 +257,7 @@ void OpenmpProfiler::captureParallelBegin(
 	//}
 	//pthread_mutex_unlock(&report_map_mutex);*/
 	#if DEBUG
-	//report[tid] << "parallel begin end" << std::endl;
+	report[tid] << "parallel begin end" << std::endl;
 	#endif
 	
 }
@@ -273,6 +274,9 @@ void OpenmpProfiler::syncEnd(){
 
 }
 
+/**
+ * Does nothing 
+ */
 void OpenmpProfiler::captureParallelEnd(ompt_thread_id_t tid,ompt_parallel_id_t parallel_id, ompt_task_id_t task_id)
 {
 	if (ompp_initialized==0){
@@ -587,6 +591,11 @@ void OpenmpProfiler::captureTaskEnd(
 
 }
 
+/**
+ * master: push async node
+ * Other threads: push finish node associated with parallel region and current barrier to stack
+ * push async node
+ */
 void OpenmpProfiler::captureImplicitTaskBegin(
 	ompt_thread_id_t tid,
 	ompt_parallel_id_t parallel_id, 

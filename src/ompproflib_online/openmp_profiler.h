@@ -31,6 +31,7 @@ private:
 	std::ofstream callsite_info;
 	//per thread stack to store ospg nodes
 	std::vector<TreeNode*> last_nodes[NUM_THREADS];
+	std::vector<TreeNode*> par_finish;
 	//map used between task create and task begin
 	std::map<ompt_task_id_t, TreeNode*> taskMap;
 	std::map<ompt_task_id_t, std::string> shadowTaskMap;
